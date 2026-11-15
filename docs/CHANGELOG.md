@@ -4,6 +4,10 @@ One entry per task. API contract changes (rule 3) must always be noted here.
 
 ## 2026-11-15
 
+- **OPS-02**: `frontend/vercel.json` forwards `/api/*` to the Render backend
+  (`https://firetwin.onrender.com`), so the deployed frontend reaches the API same-origin, with
+  no CORS setting. No API contract change.
+
 - **OPS-02**: copy the tracked `data/processed/`, `data/docs/` and `ml/artifacts/` files into the
   backend image, so it runs real mode on a Docker host (Render) with no bind mounts. Compose
   mounts are unchanged and still take precedence. No API contract change.

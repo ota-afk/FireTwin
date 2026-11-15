@@ -133,7 +133,7 @@ See `docker/README.md` for hosting (Render backend + Vercel frontend with an `/a
 | `MOCK_MODE` | `1` | `1` = fixed synthetic responses (no data needed); `0` = real model |
 | `GEMINI_API_KEY` | empty | Enables LLM explanations, chat and agents. Takes precedence over OpenAI. |
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Gemini model ID |
-| `GEMINI_REASONING_EFFORT` | `low` | Gemini thinking level (thinking tokens are billed as output); empty = the model's default |
+| `GEMINI_REASONING_EFFORT` | `medium` | Gemini thinking level (thinking tokens are billed as output); empty = the model's default |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | empty / `gpt-4o-mini` | Alternative provider |
 | `CORS_ORIGINS` | localhost:5173 | Allowed browser origins (full `https://` origins) |
 | `VITE_API_URL` | `http://localhost:8000` | API base URL for the frontend |

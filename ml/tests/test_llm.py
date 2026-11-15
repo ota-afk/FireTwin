@@ -76,17 +76,17 @@ def test_the_llm_is_tried_again_after_the_pause(monkeypatch) -> None:
     assert llm.chat("system", "user") == "ok"
 
 
-def test_gemini_asks_for_low_thinking_and_short_replies_are_capped() -> None:
+def test_gemini_asks_for_medium_thinking_and_short_replies_are_capped() -> None:
     llm.chat("system", "user")
     sent = _FakeClient.sent[-1]
-    assert sent["reasoning_effort"] == "low"  # thinking tokens are billed as output
+    assert sent["reasoning_effort"] == "medium"  # thinking tokens are billed as output
     assert sent["max_tokens"] == llm.SHORT_REPLY_MAX_TOKENS
 
 
-def test_agent_calls_get_low_thinking_but_no_output_cap() -> None:
+def test_agent_calls_get_medium_thinking_but_no_output_cap() -> None:
     llm.complete([{"role": "user", "content": "plan"}], tools=[])
     sent = _FakeClient.sent[-1]
-    assert sent["reasoning_effort"] == "low" and "max_tokens" not in sent
+    assert sent["reasoning_effort"] == "medium" and "max_tokens" not in sent
 
 
 def test_reasoning_effort_can_be_changed_or_left_to_the_model(monkeypatch) -> None:

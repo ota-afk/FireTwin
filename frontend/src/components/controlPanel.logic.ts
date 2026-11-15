@@ -10,15 +10,26 @@ export const LIMITS = {
 } as const;
 export type SliderKey = keyof typeof LIMITS;
 
-// Module axes from the 3D lab (+x fore, +y overhead, +z port).
+// Airflow direction buttons. The labels follow the ISS/aerospace convention the team asked for:
+// Z is vertical (overhead/deck) and Y is lateral (port/starboard). `dir` is NOT relabelled: it stays
+// in the API contract's frame (docs/contract.md, the same as three.js and the backend detector:
+// +x fore, +y overhead, +z port), so "+Z overhead" sends [0, 1, 0] and smoke still drifts up.
 export const FLOW_DIRS: { label: string; hint: string; dir: Vec3 }[] = [
   { label: "+X", hint: "fore", dir: [1, 0, 0] },
   { label: "−X", hint: "aft", dir: [-1, 0, 0] },
-  { label: "+Y", hint: "overhead", dir: [0, 1, 0] },
-  { label: "−Y", hint: "deck", dir: [0, -1, 0] },
-  { label: "+Z", hint: "port", dir: [0, 0, 1] },
-  { label: "−Z", hint: "starboard", dir: [0, 0, -1] },
+  { label: "+Y", hint: "port", dir: [0, 0, 1] },
+  { label: "−Y", hint: "starboard", dir: [0, 0, -1] },
+  { label: "+Z", hint: "overhead", dir: [0, 1, 0] },
+  { label: "−Z", hint: "deck", dir: [0, -1, 0] },
 ];
+
+/** A direction as the buttons name it ("+Z overhead"), or the raw vector if it isn't one of them.
+    Reports and the timeline use this, so they never show a contract-frame vector that contradicts
+    the button labels. */
+export function flowDirLabel(dir: readonly number[]): string {
+  const d = FLOW_DIRS.find(f => f.dir.length === dir.length && f.dir.every((v, i) => v === dir[i]));
+  return d ? `${d.label} ${d.hint}` : `[${dir.join(", ")}]`;
+}
 // Number inputs next to each slider: what someone types becomes a valid value, or null while the
 // text isn't a number yet (e.g. empty, or "-"). Out-of-range numbers snap to the slider's ends.
 export function clampToLimits(key: SliderKey, value: number): number {

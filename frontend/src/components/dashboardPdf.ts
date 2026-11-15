@@ -1,6 +1,7 @@
 import type { jsPDF } from "jspdf";
 import type { ScenarioIn } from "../api/types";
 import type { Session } from "../store/useScenario";
+import { flowDirLabel } from "./controlPanel.logic";
 import {
   buildResearchReport, evidenceIds, reportInputs, reportPercent, reportTimestamp,
   type ReportSession, type ResearchReport,
@@ -13,7 +14,7 @@ const clean = (text: string) => text.replace(/₂/g, "2").replace(/→/g, " to "
   .replace(/[–—]/g, "-").replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
 const timestamp = (at: number | null) => reportTimestamp(at).replace(" UTC", "");
 const number = (value: number | null) => value === null ? "Not recorded" : String(value);
-const conditions = (i: ScenarioIn) => `O2 ${i.o2_pct}% | ${i.pressure_kpa} kPa | ${i.flow_speed_cm_s} cm/s | dir [${i.flow_dir.join(", ")}] | ${i.module}`;
+const conditions = (i: ScenarioIn) => `O2 ${i.o2_pct}% | ${i.pressure_kpa} kPa | ${i.flow_speed_cm_s} cm/s | dir ${flowDirLabel(i.flow_dir)} | ${i.module}`;
 
 /** Changes are lossless relative to the full assessment snapshot printed above each table. */
 function changes(before: ScenarioIn | null, after: ScenarioIn): string {
@@ -24,7 +25,7 @@ function changes(before: ScenarioIn | null, after: ScenarioIn): string {
   if (before.o2_pct !== after.o2_pct) out.push(`O2 ${before.o2_pct}% to ${after.o2_pct}%`);
   if (before.pressure_kpa !== after.pressure_kpa) out.push(`Pressure ${after.pressure_kpa} kPa`);
   if (before.flow_speed_cm_s !== after.flow_speed_cm_s) out.push(`Flow ${before.flow_speed_cm_s} to ${after.flow_speed_cm_s} cm/s`);
-  if (before.flow_dir.some((v, j) => v !== after.flow_dir[j])) out.push(`Direction [${after.flow_dir.join(", ")}]`);
+  if (before.flow_dir.some((v, j) => v !== after.flow_dir[j])) out.push(`Direction ${flowDirLabel(after.flow_dir)}`);
   return out.join("; ") || "No model-input change";
 }
 

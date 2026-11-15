@@ -1,6 +1,7 @@
 /* Saved browser data only: exporting never calls the API or recomputes a recommendation. */
 import type { DetectOut, ScenarioIn, SimulateOut, SuppressOut, TestRef } from "../api/types";
 import type { Session, SessionEvent } from "../store/useScenario";
+import { flowDirLabel } from "./controlPanel.logic";
 
 export interface ReportStep {
   kind: "simulate" | "detect" | "apply";
@@ -53,7 +54,7 @@ export function reportPercent(value: number): string {
 
 export function reportInputs(inputs: ScenarioIn): string {
   return `${inputs.material} | O2 ${inputs.o2_pct}% | ${inputs.pressure_kpa} kPa | ` +
-    `airflow ${inputs.flow_speed_cm_s} cm/s | direction [${inputs.flow_dir.join(", ")}] | ${inputs.module}`;
+    `airflow ${inputs.flow_speed_cm_s} cm/s | direction ${flowDirLabel(inputs.flow_dir)} | ${inputs.module}`;
 }
 
 function predictionStep(kind: "simulate" | "apply", prediction: SimulateOut, at: number | null, action: string | null = null): ReportStep {

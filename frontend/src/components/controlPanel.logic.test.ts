@@ -1,9 +1,10 @@
 // FE-03: control panel rules (tested range lookup, shading, outside-range flags, Ignite gating).
 import { describe, expect, it } from "vitest";
-import type { MetaOut } from "../api/types";
+import type { MetaOut, Vec3 } from "../api/types";
+import { smokeSettings } from "../scene/smokeLogic";
 import { DEFAULT_SCENARIO } from "../api/types";
 import {
-  FLOW_DIRS, bandPercent, clampToLimits, igniteBlocker, isOutside, outsideKeys, outsideReasons, parseTyped,
+  FLOW_DIRS, bandPercent, flowDirLabel, clampToLimits, igniteBlocker, isOutside, outsideKeys, outsideReasons, parseTyped,
   testedRange, testedScope,
 } from "./controlPanel.logic";
 
@@ -119,5 +120,30 @@ describe("Ignite", () => {
   it("offers all six axis directions as unit vectors", () => {
     expect(FLOW_DIRS).toHaveLength(6);
     for (const d of FLOW_DIRS) expect(d.dir.reduce((s, v) => s + v * v, 0)).toBe(1);
+  });
+  it("labels Z as vertical and Y as lateral, while sending contract-frame vectors (+y up, +z port)", () => {
+    const byLabel = Object.fromEntries(FLOW_DIRS.map(d => [`${d.label} ${d.hint}`, d.dir]));
+    expect(byLabel).toEqual({
+      "+X fore": [1, 0, 0], "−X aft": [-1, 0, 0],
+      "+Y port": [0, 0, 1], "−Y starboard": [0, 0, -1],
+      "+Z overhead": [0, 1, 0], "−Z deck": [0, -1, 0], // three.js and the backend detector: +y is up
+    });
+  });
+  it("names directions the way the buttons do, for reports and the timeline", () => {
+    expect(flowDirLabel([0, 1, 0])).toBe("+Z overhead");
+    expect(flowDirLabel([0, 0, -1])).toBe("−Y starboard");
+    expect(flowDirLabel([1, 0, 0])).toBe("+X fore");
+    expect(flowDirLabel([0.6, 0.8, 0])).toBe("[0.6, 0.8, 0]");
+  });
+  it("drifts smoke toward the wall each button names (three.js frame: +y overhead, +z port)", () => {
+    const smokeDir = (dir: Vec3) => smokeSettings({
+      scenario_id: "t", state: "burning", burn_probability: 0.9, spread_rate_mm_s: null, trust: "strong",
+      extrapolated: false, nearest_tests: [], explanation: "", inputs: { ...DEFAULT_SCENARIO, flow_dir: dir },
+    }).dir;
+    const button = (hint: string) => FLOW_DIRS.find(d => d.hint === hint)!.dir;
+    expect(smokeDir(button("overhead"))[1]).toBe(1); // up, toward the ceiling vents
+    expect(smokeDir(button("deck"))[1]).toBe(-1);
+    expect(smokeDir(button("port"))[2]).toBe(1);
+    expect(smokeDir(button("starboard"))[2]).toBe(-1);
   });
 });

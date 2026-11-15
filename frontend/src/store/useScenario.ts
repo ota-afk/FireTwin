@@ -8,6 +8,7 @@ import type {
 } from "../api/types";
 import { DEFAULT_SCENARIO } from "../api/types";
 import { alarmAfterS } from "../scene/alarmLogic";
+import { flowDirLabel } from "../components/controlPanel.logic";
 import { loadSavedInputs, saveInputs } from "./savedInputs";
 
 export type Phase = "idle" | "burning" | "detected" | "suppressing" | "out" | "still_burning";
@@ -71,7 +72,7 @@ const INPUT_LABELS: Record<TrackedInput, string> = {
   flow_speed_cm_s: "Airflow speed", flow_dir: "Airflow direction",
 };
 const inputValue = (key: TrackedInput, value: unknown) =>
-  key === "flow_dir" && Array.isArray(value) ? value.join(", ") : String(value);
+  key === "flow_dir" && Array.isArray(value) ? flowDirLabel(value) : String(value);
 const recordInputs = (inputs: ScenarioIn, action: TimelineEvent["action"], context: string, at = Date.now()) =>
   TRACKED_INPUTS.map(key => ({
     at, variable: INPUT_LABELS[key], action, from: null,

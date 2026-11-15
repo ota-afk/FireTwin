@@ -16,6 +16,11 @@ import { Flame as CoreFlame } from "../lab/core.js";
 import { flameTarget, stepLife } from "./flameLogic";
 
 const UP = new THREE.Vector3(0, 1, 0);
+// EXPERIMENT: radially diffusing heat halo around the spherical (g = 0) flame: an amber shell that
+// grows outward from the flame and fades, over and over, like heat diffusing away in still air.
+const HALO_VERT = "varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }";
+const HALO_FRAG = "uniform float uOpacity; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 1.6); gl_FragColor = vec4(vec3(1.0, 0.62, 0.25) * (0.5 + f), clamp(f * uOpacity, 0.0, 1.0));\n#include <colorspace_fragment>\n}";
+const HALO_PERIOD_S = 2.4; // demo seconds per outward pulse
 const STRIPES_VERT = "varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }";
 const STRIPES_FRAG = "uniform float uOpacity; varying vec3 vP; void main(){ if (fract((vP.x + vP.y) * 4.0) < 0.5) discard; gl_FragColor = vec4(vec3(0.62), uOpacity);\n#include <colorspace_fragment>\n}";
 
@@ -31,6 +36,8 @@ export function Flame({ simulate }: { simulate: SimulateOut | null }) {
   const clock = useRef(0);
   const life = useRef(0); // 0 = no flame ... 1 = fully burning; changes linearly
   const dir = useRef(new THREE.Vector3(1, 0, 0));
+  const halos = useRef<(THREE.Mesh | null)[]>([]);
+  const haloMats = useRef<(THREE.ShaderMaterial | null)[]>([]);
 
   useEffect(() => {
     const f = flame.current;
@@ -53,6 +60,17 @@ export function Flame({ simulate }: { simulate: SimulateOut | null }) {
     f.fuel.visible = simulate !== null; // the fuel droplet appears once a scenario exists
     dir.current.set(target.flowDir[0], target.flowDir[1], target.flowDir[2]);
     f.tear.quaternion.setFromUnitVectors(UP, dir.current);
+    // g = 0: no "down". In forced flow the flame's blunt front sits just upstream of the fuel.
+    f.ball.position.copy(dir.current).multiplyScalar(-f.g * f.size * 0.1);
+    const still = Math.max(0, 1 - f.g / 0.15); // halos only for the spherical flame
+    halos.current.forEach((h, n) => {
+      const mat = haloMats.current[n];
+      if (!h || !mat) return;
+      const phase = ((clock.current * 2.5) / HALO_PERIOD_S + n / halos.current.length) % 1;
+      h.visible = still > 0.01 && f.size > 0.01;
+      h.scale.setScalar(Math.max(1e-4, f.size * (1.3 + 2.2 * phase)));
+      mat.uniforms.uOpacity.value = 0.5 * (1 - phase) * still * Math.min(1, f.alive * 1.5);
+    });
     f.group.scale.setScalar(target.spreadScale);
     if (stripes.current && stripesMat.current) {
       stripes.current.visible = target.extrapolated && f.size > 0.01;
@@ -64,6 +82,21 @@ export function Flame({ simulate }: { simulate: SimulateOut | null }) {
   return (
     <group position={FIRE_POS as [number, number, number]} name="fire">
       <primitive object={flame.current.group} position={[0, 0, 0]}>
+        {[0, 1].map(n => (
+          <mesh key={n} ref={el => { halos.current[n] = el; }} visible={false} renderOrder={9}>
+            <sphereGeometry args={[1, 32, 16]} />
+            <shaderMaterial
+              ref={el => { haloMats.current[n] = el; }}
+              uniforms={{ uOpacity: { value: 0 } }}
+              vertexShader={HALO_VERT}
+              fragmentShader={HALO_FRAG}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        ))}
         <mesh ref={stripes} visible={false} renderOrder={11}>
           <sphereGeometry args={[1, 32, 16]} />
           <shaderMaterial

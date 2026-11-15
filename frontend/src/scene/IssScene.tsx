@@ -11,9 +11,18 @@ import { CAMERA_FOV, CAMERA_START, clampCamera } from "../lab/core.js";
 import { FallbackModule } from "./FallbackModule";
 import { Flame } from "./Flame";
 import { Smoke } from "./Smoke";
+import { SootVolume } from "./SootVolume";
+import { FdsReplay } from "./FdsReplay";
 import { IssLab } from "./IssLab";
 import { detectorMarks } from "./detectors";
 import { simSecondsSince } from "./clock";
+
+// EXPERIMENT switches, read once from the URL:
+//   ?transport=particles  the FE-06 particle smoke instead of the g = 0 soot field
+//   ?fds=/fds/sample_slice.json  replay a pre-computed FDS slice (scene/fdsSlice.ts format)
+const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
+const TRANSPORT = params.get("transport") === "particles" ? "particles" : "field";
+const fdsReplayUrl = params.get("fds");
 
 // Falls back to the coded module when the glTF can't load (Suspense only covers "still loading").
 class ModelBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -116,8 +125,10 @@ export function IssScene({ detect, simulate, alarmId = null, ignition = 0, ignit
       </ModelBoundary>
       <DetectorMarkers detect={detect} alarmId={alarmId} />
       {clockEl && <ClockReadout el={clockEl} ignitedAt={ignitedAt} />}
-      <Smoke simulate={simulate} ignition={ignition} />
+      {/* EXPERIMENT: g = 0 volumetric soot field (FDS-style); ?transport=particles brings back FE-06. */}
+      {TRANSPORT === "particles" ? <Smoke simulate={simulate} ignition={ignition} /> : <SootVolume simulate={simulate} ignition={ignition} />}
       <Flame simulate={simulate} />
+      {fdsReplayUrl && <FdsReplay url={fdsReplayUrl} />}
       <OrbitControls makeDefault enableDamping enablePan={false} minDistance={0.6} maxDistance={4.2} />
       <KeepCameraInside />
     </Canvas>

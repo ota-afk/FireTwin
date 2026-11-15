@@ -1,6 +1,7 @@
 /* FE-05: how a SimulateOut maps onto the flame. Pure, so it's unit-tested; Flame.tsx applies it
    to three.js objects inside useFrame. The model decides; the flame only illustrates. */
 import type { ScenarioIn, SimulateOut, Vec3 } from "../api/types";
+import { flameStretch } from "./microgravity";
 
 export const MAX_FLOW_CM_S = 40; // ScenarioIn: flow_speed_cm_s is 0-40
 export const IGNITE_S = 0.4; // the flame grows to full size (appears well under 1 s)
@@ -43,8 +44,9 @@ export function flameTarget(sim: SimulateOut | null): FlameTarget {
     alive: sim.state === "burning" ? 1 : 0,
     burnP: Math.min(1, Math.max(0, sim.burn_probability)),
     o2: sim.inputs.o2_pct,
-    // In microgravity a flame stays a sphere in still air and is drawn out as the airflow rises.
-    stretch: Math.min(1, flow.speedCmS / MAX_FLOW_CM_S) * 0.85,
+    // EXPERIMENT (g = 0): a true sphere up to 2 cm/s (FLEX-2), then drawn out along the forced flow,
+    // more with faster airflow and richer oxygen (scene/microgravity.ts).
+    stretch: flameStretch(flow.speedCmS, sim.inputs.o2_pct),
     flowDir: flow.dir,
     spreadScale: 1 + Math.min(1, spread / 2) * 0.35,
     extrapolated: sim.extrapolated,

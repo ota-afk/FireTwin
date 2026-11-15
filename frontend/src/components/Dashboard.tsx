@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { TestRef } from "../api/types";
 import { useScenario } from "../store/useScenario";
+import { fdsDeck } from "../lab/fdsDeck";
 import { downloadDashboardPdf } from "./dashboardPdf";
 import { changeText, o2Sweep, resultText, sourceId, stampRows } from "./dashboard.logic";
 
@@ -90,6 +91,18 @@ export function Dashboard() {
             }}
           >
             {exporting ? "Creating PDF…" : "Export to PDF"}
+          </button>
+          {/* EXPERIMENT: the current controls as a NIST FDS input deck, to run offline in FDS/Smokeview. */}
+          <button
+            type="button" className="btn-ghost" title="NIST FDS input file for the current controls (g = 0)"
+            onClick={() => {
+              const url = URL.createObjectURL(new Blob([fdsDeck(useScenario.getState().inputs)], { type: "text/plain" }));
+              const a = document.createElement("a");
+              a.href = url; a.download = "firetwin_iss.fds"; a.click();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }}
+          >
+            FDS deck
           </button>
         </div>
       </div>

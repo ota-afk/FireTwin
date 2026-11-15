@@ -858,6 +858,9 @@ This supersedes the unpublished first-increment behavior above; no public API ch
   it does not start the failure pause. Agent calls (`complete()` with tools) have no cap.
 - Explanations are one grounding-checked sentence, so low thinking costs no visible quality, and
   any ungrounded answer still falls back to the template. No API or schema change.
+- Update (2026-11-15, Nergis): at the user's request the default is now `"medium"`. If a model
+  rejects it on the OpenAI-compatible endpoint, the call fails, the LLM pauses and the template is
+  used; set `GEMINI_REASONING_EFFORT=low` to go back.
 
 ## FE-09: browser session research PDF (2026-11-15, Ryan)
 

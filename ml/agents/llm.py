@@ -10,7 +10,7 @@ COOLDOWN_S (available() is False), so explanations and chat use their offline te
 instead of waiting on a provider that just failed. It is tried again after the pause.
 
 Cost: Gemini's thinking tokens are billed as output, the expensive side. Every Gemini call asks
-for a low thinking level (`reasoning_effort`, override with GEMINI_REASONING_EFFORT; empty = the
+for a medium thinking level (`reasoning_effort`, override with GEMINI_REASONING_EFFORT; empty = the
 model's default), and the short-text calls (explanation, chat) are capped at
 SHORT_REPLY_MAX_TOKENS. A reply cut off by that cap comes back empty, so callers use their template.
 """
@@ -33,10 +33,11 @@ PROVIDERS = (
         "model_env": "GEMINI_MODEL",
         "default_model": "gemini-3.8-flash",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        # Mapped to Gemini's thinking_level. "low" is accepted by the Gemini 3 models; some
-        # reject "minimal" or "medium" on this endpoint.
+        # Mapped to Gemini's thinking_level. Some Gemini 3 models reject "medium" on this
+        # endpoint; a rejected call pauses the LLM and callers use their template, so set
+        # GEMINI_REASONING_EFFORT=low if the key check (`python -m ml.agents.llm`) fails.
         "effort_env": "GEMINI_REASONING_EFFORT",
-        "default_effort": "low",
+        "default_effort": "medium",
     },
     {
         "name": "openai",

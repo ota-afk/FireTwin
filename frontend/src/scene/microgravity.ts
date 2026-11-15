@@ -27,12 +27,21 @@ export function oxygenFactor(o2Pct: number): number {
   return Math.min(1, Math.max(0, (o2Pct - 13) / 17));
 }
 
+/* Flame elongation, calibrated against NIST FDS (fds_runs/, heptane, 30 % O2, GVEC=0): the aspect
+   ratio of the hot zone around the fire was 1.05-1.15 at 1 cm/s (spherical, supporting the 2 cm/s
+   threshold), 1.25-1.33 at 4, 1.28-1.44 at 10 and 1.45-1.48 at 20 cm/s: it rises quickly once the
+   flow is forced, then saturates. (u - 2)^0.3, full at 20 cm/s, fits those points (0.54 / 0.73 / 1
+   relative to 1 cm/s; the fit gives 0.54 / 0.78 / 1). FDS at 0.25 m cells can't resolve the flame
+   itself, so this calibrates the trend, not absolute flame lengths. */
+export const STRETCH_FULL_CM_S = 20;
+export const STRETCH_EXPONENT = 0.3;
+
 /** How far the flame sheet is drawn out along the airflow: 0 = sphere (still air, up to 2 cm/s),
-    rising with the forced-flow speed and with oxygen, to at most 0.85. */
+    rising fast with forced flow and saturating by 20 cm/s; richer oxygen stretches it further. 0-1. */
 export function flameStretch(speedCmS: number, o2Pct: number): number {
   if (flameRegime(speedCmS) === "spherical") return 0;
-  const u = Math.min(1, (speedCmS - SPHERICAL_MAX_CM_S) / (MAX_FLOW_CM_S - SPHERICAL_MAX_CM_S));
-  return Math.min(0.85, (0.15 + 0.7 * Math.pow(u, 0.7)) * (0.6 + 0.4 * oxygenFactor(o2Pct)));
+  const u = Math.min(1, (speedCmS - SPHERICAL_MAX_CM_S) / (STRETCH_FULL_CM_S - SPHERICAL_MAX_CM_S));
+  return Math.min(1, (0.15 + 0.85 * Math.pow(u, STRETCH_EXPONENT)) * (0.6 + 0.4 * oxygenFactor(o2Pct)));
 }
 
 // ---------------- the soot scalar field ----------------
@@ -45,16 +54,38 @@ export interface FieldSettings {
   dir: Vec3; // unit airflow direction
   speedMS: number; // forced airflow, m/s (0 = fans off)
   vents: Vec3[]; // return-vent positions (contract frame)
+  hrrKw?: number; // fire size for the thermal expansion (default 0.5 kW, as in the FDS decks)
+  // FDS-deck boundaries instead of the cabin's: the whole upstream wall supplies clean air and the
+  // whole downstream wall exhausts (soot leaves), with no vent suction. Used to calibrate against FDS.
+  openEnds?: boolean;
 }
 
-const D_STILL = 0.004; // m^2/s: molecular + thermal mixing in still air
-const D_FORCED = 0.02; // m^2/s per m/s of forced flow: eddy diffusivity grows with the fans
-const EXPANSION_Q = 0.09; // m^3/s: volume source of the fire's thermal expansion (u_r = Q / 4 pi r^2)
-const EXPANSION_MAX = 0.2; // m/s cap close to the fire
-const VENT_PULL_RANGE = 1.2; // m: how far a return vent bends the flow toward itself
-const VENT_SINK_RADIUS = 0.35; // m
-const VENT_SINK_RATE = 0.6; // 1/s: exhaust through a return vent (fans on only)
-const SOURCE_RADIUS = 0.2; // m
+export interface TransportParams {
+  dStill: number; // m^2/s: soot diffusivity in still air
+  dForcedPerMS: number; // m^2/s added per m/s of forced flow (eddy mixing)
+  expansionPerKw: number; // m^3/s of thermal expansion per kW (u_r = Q / 4 pi r^2)
+  expansionMax: number; // m/s cap close to the fire
+  ventPullRange: number; // m: how far a return vent bends the flow toward itself
+  ventSinkRadius: number; // m
+  ventSinkRate: number; // 1/s: exhaust through a return vent (fans on only)
+  sourceRadius: number; // m: size of the soot release around the fire
+}
+
+/* Calibrated against NIST FDS 6.11.1 (fds_runs/, heptane at 30 % O2, 0.5 kW, GVEC=0, 0-20 cm/s,
+   0.25 m grid, 60 s), by fitting the soot slice through the fire (scripts/calibrate_fds.ts).
+   UNCALIBRATED is the hand-tuned starting point, kept for comparison. */
+export const UNCALIBRATED: TransportParams = {
+  dStill: 0.004, dForcedPerMS: 0.2, expansionPerKw: 0.18, expansionMax: 0.2,
+  ventPullRange: 1.2, ventSinkRadius: 0.35, ventSinkRate: 0.6, sourceRadius: 0.2,
+};
+export const TRANSPORT: TransportParams = {
+  ...UNCALIBRATED,
+  // Fit: still-air L1 1.05 -> 0.62, forced-flow L1 1.16 -> 0.39 (0 = identical, 2 = disjoint).
+  dStill: 1e-5, // FDS keeps soot compact (sigma ~0.2 m over 60 s): numerical diffusion is enough
+  dForcedPerMS: 0.01,
+  expansionPerKw: 0.03, // physical scale: HRR / (rho cp T) = 0.0028 m^3/s per kW; the fit prefers 0.03
+  sourceRadius: 0.2,
+};
 
 export class SootField {
   readonly nx: number;
@@ -71,10 +102,15 @@ export class SootField {
   private sink: Float32Array; // exhaust rate per cell (1/s)
   private src: Float32Array; // share of the source per cell (sums to 1)
   private uMax = 0;
-  private diff = D_STILL;
+  private diff: number;
   private key = "";
+  private openAxis = -1; // with openEnds: the flow axis (0 x, 1 y, 2 z) whose end walls are open
+  private openSign = 0;
+  readonly params: TransportParams;
 
-  constructor(nx = 34, ny = 11, nz = 11) {
+  constructor(nx = 34, ny = 11, nz = 11, params: Partial<TransportParams> = {}) {
+    this.params = { ...TRANSPORT, ...params };
+    this.diff = this.params.dStill;
     this.nx = nx; this.ny = ny; this.nz = nz;
     this.dx = (2 * FIELD_BOUNDS.x) / nx;
     this.dy = (2 * FIELD_BOUNDS.yz) / ny;
@@ -88,7 +124,7 @@ export class SootField {
     let total = 0;
     for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const [x, y, z] = this.centre(i, j, k);
-      const w = Math.exp(-(x * x + y * y + z * z) / (SOURCE_RADIUS * SOURCE_RADIUS));
+      const w = Math.exp(-(x * x + y * y + z * z) / (this.params.sourceRadius ** 2));
       this.src[this.idx(i, j, k)] = w; total += w;
     }
     for (let m = 0; m < n; m++) this.src[m] /= total;
@@ -112,13 +148,21 @@ export class SootField {
 
   /** The velocity field for these settings (recomputed only when they change). g = 0: no buoyancy. */
   private prepare(p: FieldSettings): void {
-    const key = `${p.emitting}|${p.dir.join(",")}|${p.speedMS}|${p.vents.flat().join(",")}`;
+    const key = `${p.emitting}|${p.dir.join(",")}|${p.speedMS}|${p.vents.flat().join(",")}|${p.hrrKw}|${p.openEnds}`;
     if (key === this.key) return;
     this.key = key;
     const fans = p.speedMS > 0;
+    const P = this.params;
+    const ventsOn = fans && !p.openEnds; // FDS decks have no vent suction: soot leaves at the exhaust wall
+    this.openAxis = -1; this.openSign = 0;
+    if (fans && p.openEnds) {
+      this.openAxis = [0, 1, 2].reduce((a, b) => (Math.abs(p.dir[b]) > Math.abs(p.dir[a]) ? b : a), 0);
+      this.openSign = Math.sign(p.dir[this.openAxis]);
+    }
+    const expansionQ = P.expansionPerKw * (p.hrrKw ?? 0.5);
     let target: Vec3 | null = null, best = -Infinity;
-    if (fans) for (const v of p.vents) { const s = v[0] * p.dir[0] + v[1] * p.dir[1] + v[2] * p.dir[2]; if (s > best) { best = s; target = v; } }
-    this.diff = fans ? D_STILL + D_FORCED * p.speedMS * 10 : D_STILL;
+    if (ventsOn) for (const v of p.vents) { const s = v[0] * p.dir[0] + v[1] * p.dir[1] + v[2] * p.dir[2]; if (s > best) { best = s; target = v; } }
+    this.diff = P.dStill + P.dForcedPerMS * p.speedMS;
     this.uMax = 0;
     for (let k = 0; k < this.nz; k++) for (let j = 0; j < this.ny; j++) for (let i = 0; i < this.nx; i++) {
       const m = this.idx(i, j, k);
@@ -128,19 +172,19 @@ export class SootField {
       // The return vent furthest downstream bends the flow toward itself (converging: soot gathers there).
       if (target) {
         const tx = target[0] - x, ty = target[1] - y, tz = target[2] - z, d = Math.max(Math.hypot(tx, ty, tz), 1e-3);
-        const pull = 0.6 * p.speedMS * Math.exp(-d / VENT_PULL_RANGE) / d;
+        const pull = 0.6 * p.speedMS * Math.exp(-d / P.ventPullRange) / d;
         ux += tx * pull; uy += ty * pull; uz += tz * pull;
       }
       // Thermal expansion of the burning gas (low-Mach divergence): a radial outflow ~ 1/r^2.
       if (p.emitting) {
         const r = Math.max(Math.hypot(x, y, z), 0.05);
-        const ur = Math.min(EXPANSION_MAX, EXPANSION_Q / (4 * Math.PI * r * r)) / r;
+        const ur = Math.min(P.expansionMax, expansionQ / (4 * Math.PI * r * r)) / r;
         ux += x * ur; uy += y * ur; uz += z * ur;
       }
       this.ux[m] = ux; this.uy[m] = uy; this.uz[m] = uz;
       this.uMax = Math.max(this.uMax, Math.abs(ux) / this.dx + Math.abs(uy) / this.dy + Math.abs(uz) / this.dz);
       let s = 0;
-      if (fans) for (const v of p.vents) if (Math.hypot(v[0] - x, v[1] - y, v[2] - z) < VENT_SINK_RADIUS) s = VENT_SINK_RATE;
+      if (ventsOn) for (const v of p.vents) if (Math.hypot(v[0] - x, v[1] - y, v[2] - z) < P.ventSinkRadius) s = P.ventSinkRate;
       this.sink[m] = s;
     }
   }
@@ -174,6 +218,15 @@ export class SootField {
       if (j > 0) { const n = m - sx, uf = 0.5 * (uy[m] + uy[n]); flux += (uf > 0 ? uf * c[n] : uf * cm) / this.dy; flux += D * (c[n] - cm) / (this.dy * this.dy); }
       if (k < nz - 1) { const n = m + sy, uf = 0.5 * (uz[m] + uz[n]); flux -= (uf > 0 ? uf * cm : uf * c[n]) / this.dz; flux += D * (c[n] - cm) / (this.dz * this.dz); }
       if (k > 0) { const n = m - sy, uf = 0.5 * (uz[m] + uz[n]); flux += (uf > 0 ? uf * c[n] : uf * cm) / this.dz; flux += D * (c[n] - cm) / (this.dz * this.dz); }
+      // Open exhaust wall (openEnds): soot leaves through the downstream end; the supply brings clean air.
+      if (this.openAxis >= 0) {
+        const a = this.openAxis, sg = this.openSign;
+        const at = a === 0 ? (sg > 0 ? i === nx - 1 : i === 0) : a === 1 ? (sg > 0 ? j === ny - 1 : j === 0) : (sg > 0 ? k === nz - 1 : k === 0);
+        if (at) {
+          const un = (a === 0 ? ux[m] : a === 1 ? uy[m] : uz[m]) * sg;
+          flux -= Math.max(0, un) * cm / (a === 0 ? this.dx : a === 1 ? this.dy : this.dz);
+        }
+      }
       const v = cm + h * (flux + src * this.src[m] - this.sink[m] * cm);
       next[m] = v > 0 ? v : 0;
     }

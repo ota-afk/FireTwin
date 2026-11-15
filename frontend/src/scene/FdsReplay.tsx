@@ -50,7 +50,8 @@ export function FdsReplay({ url }: { url: string }) {
     col.needsUpdate = true;
     if (label.current) {
       const synthetic = /synthetic/i.test(data.source) ? " · synthetic sample, not FDS output" : "";
-      label.current.textContent = `FDS replay · ${data.quantity} · t = ${data.times[i].toFixed(1)} s${synthetic}`;
+      const who = /NIST FDS/.test(data.source) ? "NIST FDS replay" : "FDS replay";
+      label.current.textContent = `${who} · ${data.quantity}${data.units ? ` (${data.units})` : ""} · t = ${data.times[i].toFixed(1)} s${synthetic}`;
     }
   });
 

@@ -1,0 +1,6 @@
+# FDS run folders: keep only the input decks and this file in git; outputs are large.
+*
+!*/
+!*.fds
+!.gitignore
+!README.md

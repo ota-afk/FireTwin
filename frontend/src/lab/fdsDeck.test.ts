@@ -11,7 +11,8 @@ describe("fdsDeck", () => {
   it("turns gravity off and sizes the mesh to the 8.5 m cabin aisle", () => {
     const deck = fdsDeck(inputs());
     expect(deck).toContain("&MISC GVEC=0.0,0.0,0.0,");
-    expect(deck).toContain("&MESH IJK=68,22,22, XB=-4.25,4.25,-1.38,1.38,-1.38,1.38 /");
+    expect(deck).toContain("&MESH IJK=69,23,23, XB=-4.25,4.25,-1.38,1.38,-1.38,1.38 /");
+    expect(deck).toContain("&OBST XB=-0.062,0.062,-0.06,0.06,-0.06,0.06, SURF_ID='FIRE'");
     expect(deck.trim().endsWith("&TAIL /")).toBe(true);
     for (const line of deck.trim().split("\n")) expect(line).toMatch(/^&[A-Z]+ .*\/( .*)?$/);
   });
@@ -40,7 +41,7 @@ describe("fdsDeck", () => {
 
   it("puts a soot device at every vent, in FDS coordinates", () => {
     const deck = fdsDeck(inputs());
-    expect(deck).toContain("&DEVC ID='vent_fwd', XYZ=4.0,0.0,1.37, QUANTITY='SOOT DENSITY' /");
+    expect(deck).toContain("&DEVC ID='vent_fwd', XYZ=4.0,0.0,1.37, QUANTITY='DENSITY', SPEC_ID='SOOT' /");
     expect(deck).toContain("&DEVC ID='vent_aft', XYZ=-4.0,0.0,1.37,");
     expect(toFds([1, 2, 3])).toEqual([1, 3, 2]);
   });

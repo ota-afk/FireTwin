@@ -40,10 +40,19 @@ export function fuelFor(material: string): Fuel {
 
 export interface DeckOptions {
   tEnd?: number; // s
-  cell?: number; // m (grid spacing)
+  cell?: number; // m (target grid spacing; counts are rounded to odd so one cell is centred on the fire)
   hrrKw?: number; // fire size
   chid?: string;
+  frames?: number; // slice/device output frames over the run (&DUMP NFRAMES)
+  dt?: number; // s: fixed time step (LOCK_TIME_STEP). In near-still air FDS otherwise grows the step
+               // to several seconds, which skips slice frames; keep dt below cell / max velocity.
 }
+
+/** Cells along a side: about side/cell, odd, so a cell is centred on the fire at the origin. */
+export const oddCells = (side: number, cell: number) => {
+  const n = Math.max(1, Math.round(side / cell));
+  return n % 2 ? n : n + 1;
+};
 
 const f = (v: number, d = 3) => {
   const s = v.toFixed(d).replace(/0+$/, "");
@@ -52,24 +61,28 @@ const f = (v: number, d = 3) => {
 const xb = (a: number[]) => a.map(v => f(v)).join(",");
 
 export function fdsDeck(inputs: ScenarioIn, opts: DeckOptions = {}): string {
-  const { tEnd = 120, cell = 0.125, hrrKw = 1, chid = "firetwin_iss" } = opts;
+  const { tEnd = 120, cell = 0.125, hrrKw = 0.5, chid = "firetwin_iss", frames = 40, dt } = opts;
   const L = MODULE.length / 2, A = MODULE.aisle;
-  const ijk = [Math.round((2 * L) / cell), Math.round((2 * A) / cell), Math.round((2 * A) / cell)];
+  const ijk = [oddCells(2 * L, cell), oddCells(2 * A, cell), oddCells(2 * A, cell)];
+  const d = [(2 * L) / ijk[0], (2 * A) / ijk[1], (2 * A) / ijk[2]]; // actual cell sizes
   const fuel = fuelFor(inputs.material);
   const len = Math.hypot(...inputs.flow_dir);
   const speed = len > 0 ? Math.max(0, inputs.flow_speed_cm_s) / 100 : 0; // m/s
   const dirFds = toFds(len > 0 ? (inputs.flow_dir.map(v => v / len) as Vec3) : [1, 0, 0]);
-  const burner = 0.05, hrrpua = (hrrKw / (6 * (2 * burner) ** 2)); // kW/m^2 over the cube's 6 faces
+  // The burner is the one grid cell centred on the origin (no snapping), burning on all 6 faces.
+  const hb = d.map(v => v / 2);
+  const hrrpua = hrrKw / (2 * (d[0] * d[1] + d[1] * d[2] + d[0] * d[2])); // kW/m^2
   const bounds: [number, number][] = [[-L, L], [-A, A], [-A, A]]; // FDS X, Y, Z
 
   const lines = [
     `&HEAD CHID='${chid}', TITLE='FireTwin ISS lab module, microgravity: ${inputs.material}, ${f(inputs.o2_pct, 2)}% O2, ${f(inputs.flow_speed_cm_s, 2)} cm/s' /`,
-    `&TIME T_END=${f(tEnd, 1)} /`,
+    dt ? `&TIME T_END=${f(tEnd, 1)}, DT=${f(dt, 3)}, LOCK_TIME_STEP=.TRUE. /` : `&TIME T_END=${f(tEnd, 1)} /`,
+    `&DUMP NFRAMES=${frames} /`,
     `&MESH IJK=${ijk.join(",")}, XB=${xb([-L, L, -A, A, -A, A])} /`,
     `&MISC GVEC=0.0,0.0,0.0, Y_O2_INFTY=${f(o2MassFraction(inputs.o2_pct), 4)}, P_INF=${f(inputs.pressure_kpa * 1000, 1)} /`,
     `&REAC FUEL='${fuel.name}', C=${fuel.c}, H=${fuel.h}, O=${fuel.o}, SOOT_YIELD=${fuel.soot}, HEAT_OF_COMBUSTION=${fuel.hoc}. /`,
     `&SURF ID='FIRE', HRRPUA=${f(hrrpua, 1)}, COLOR='ORANGE' /`,
-    `&OBST XB=${xb([-burner, burner, -burner, burner, -burner, burner])}, SURF_ID='FIRE' / 10 cm burner at the module centre`,
+    `&OBST XB=${xb([-hb[0], hb[0], -hb[1], hb[1], -hb[2], hb[2]])}, SURF_ID='FIRE' / one-cell burner at the module centre`,
   ];
   if (speed > 0) {
     const axis = dirFds.findIndex(v => Math.abs(v) > 0.5);
@@ -88,11 +101,11 @@ export function fdsDeck(inputs: ScenarioIn, opts: DeckOptions = {}): string {
   for (const v of VENTS as { id: string; pos: number[] }[]) {
     const p = toFds([v.pos[0], v.pos[1], v.pos[2]]);
     const inside = p.map((c, i) => Math.min(bounds[i][1] - 0.005, Math.max(bounds[i][0] + 0.005, c))); // inside the mesh
-    lines.push(`&DEVC ID='${v.id}', XYZ=${xb(inside)}, QUANTITY='SOOT DENSITY' /`);
+    lines.push(`&DEVC ID='${v.id}', XYZ=${xb(inside)}, QUANTITY='DENSITY', SPEC_ID='SOOT' /`);
   }
   lines.push(
-    "&SLCF PBY=0.0, QUANTITY='SOOT DENSITY' / mid-plane through the fire (replayable in FireTwin)",
-    "&SLCF PBY=0.0, QUANTITY='TEMPERATURE' /",
+    "&SLCF PBY=0.0, QUANTITY='DENSITY', SPEC_ID='SOOT', CELL_CENTERED=.TRUE. / mid-plane through the fire (replayable in FireTwin)",
+    "&SLCF PBY=0.0, QUANTITY='TEMPERATURE', CELL_CENTERED=.TRUE. /",
     "&SLCF PBY=0.0, QUANTITY='VELOCITY', VECTOR=.TRUE. /",
     "&TAIL /",
   );

@@ -12,6 +12,8 @@
     "gen:api": "openapi-typescript ${VITE_API_URL:-http://localhost:8000}/openapi.json -o src/api/schema.d.ts",
     "model:iss": "bash scripts/blender/build_iss_model.sh",
     "model:interior": "bash scripts/blender/build_iss_model.sh --interior",
+    "fds:slice": "vite-node scripts/fds_slice_to_json.ts",
+    "fds:deck": "vite-node scripts/make_fds_deck.ts",
     "fds:sample": "vite-node scripts/make_fds_sample.ts",
     "model:iss:check": "python3 scripts/blender/optimize_iss.py --self-test"
   },
